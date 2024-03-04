@@ -1787,10 +1787,9 @@ let newinterp_path = abspath("compiler/newinterp.jl")
                     inferred
                     CustomData(@nospecialize inferred) = new(inferred)
                 end
-                function CC.transform_result_for_cache(interp::PrecompileInterpreter,
-                        mi::Core.MethodInstance, valid_worlds::CC.WorldRange, result::CC.InferenceResult)
-                    inferred_result = @invoke CC.transform_result_for_cache(interp::CC.AbstractInterpreter,
-                        mi::Core.MethodInstance, valid_worlds::CC.WorldRange, result::CC.InferenceResult)
+                function CC.transform_result_for_cache(interp::PrecompileInterpreter, result::CC.InferenceResult)
+                    inferred_result = @invoke CC.transform_result_for_cache(
+                        interp::CC.AbstractInterpreter, result::CC.InferenceResult)
                     return CustomData(inferred_result)
                 end
                 function CC.src_inlining_policy(interp::PrecompileInterpreter, @nospecialize(src),
@@ -1801,8 +1800,6 @@ let newinterp_path = abspath("compiler/newinterp.jl")
                     return @invoke CC.src_inlining_policy(interp::CC.AbstractInterpreter, src::Any,
                                                           info::CC.CallInfo, stmt_flag::UInt32)
                 end
-                CC.retrieve_ir_for_inlining(cached_result::Core.CodeInstance, src::CustomData) =
-                    CC.retrieve_ir_for_inlining(cached_result, src.inferred)
                 CC.retrieve_ir_for_inlining(mi::Core.MethodInstance, src::CustomData, preserve_local_sources::Bool) =
                     CC.retrieve_ir_for_inlining(mi, src.inferred, preserve_local_sources)
             end

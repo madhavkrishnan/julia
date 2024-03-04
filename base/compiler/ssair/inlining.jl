@@ -907,8 +907,7 @@ function resolve_todo(mi::MethodInstance, result::Union{Nothing,InferenceResult,
             compilesig_invokes=OptimizationParams(state.interp).compilesig_invokes)
 
     add_inlining_backedge!(et, mi)
-    ir = inferred_result isa CodeInstance  ? retrieve_ir_for_inlining(inferred_result, src) :
-                                             retrieve_ir_for_inlining(mi, src, preserve_local_sources)
+    ir = retrieve_ir_for_inlining(mi, src, preserve_local_sources)
     return InliningTodo(mi, ir, effects)
 end
 
@@ -938,8 +937,7 @@ function resolve_todo(mi::MethodInstance, @nospecialize(info::CallInfo), flag::U
 
     preserve_local_sources = true
     src_inlining_policy(state.interp, src, info, flag) || return nothing
-    ir = cached_result isa CodeInstance  ? retrieve_ir_for_inlining(cached_result, src) :
-                                           retrieve_ir_for_inlining(mi, src, preserve_local_sources)
+    ir = retrieve_ir_for_inlining(mi, src, preserve_local_sources)
     add_inlining_backedge!(et, mi)
     return InliningTodo(mi, ir, effects)
 end
@@ -994,9 +992,9 @@ function analyze_method!(match::MethodMatch, argtypes::Vector{Any},
     return resolve_todo(mi, volatile_inf_result, info, flag, state; invokesig)
 end
 
-function retrieve_ir_for_inlining(cached_result::CodeInstance, src::MaybeCompressed)
-    src = _uncompressed_ir(cached_result, src)::CodeInfo
-    return inflate_ir!(src, cached_result.def)
+function retrieve_ir_for_inlining(mi::MethodInstance, src::String, ::Bool)
+    src = _uncompressed_ir(mi, src)
+    return inflate_ir!(src, mi)
 end
 function retrieve_ir_for_inlining(mi::MethodInstance, src::CodeInfo, preserve_local_sources::Bool)
     if preserve_local_sources

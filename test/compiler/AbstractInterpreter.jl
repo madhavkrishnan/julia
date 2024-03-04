@@ -15,7 +15,7 @@ CC.may_optimize(::AbsIntOnlyInterp1) = false
 # it should work even if the interpreter discards inferred source entirely
 @newinterp AbsIntOnlyInterp2
 CC.may_optimize(::AbsIntOnlyInterp2) = false
-CC.transform_result_for_cache(::AbsIntOnlyInterp2, ::Core.MethodInstance, ::CC.WorldRange, ::CC.InferenceResult) = nothing
+CC.transform_result_for_cache(::AbsIntOnlyInterp2, ::CC.InferenceResult) = nothing
 @test Base.infer_return_type(Base.init_stdio, (Ptr{Cvoid},); interp=AbsIntOnlyInterp2()) >: IO
 
 # OverlayMethodTable
@@ -463,7 +463,7 @@ let # generate cache
     target_mi = CC.specialize_method(only(methods(custom_lookup_target)), Tuple{typeof(custom_lookup_target),Bool,Int}, Core.svec())
     target_ci = custom_lookup(target_mi, CONST_INVOKE_INTERP_WORLD, CONST_INVOKE_INTERP_WORLD)
     @test target_ci.rettype == Tuple{Float64,Nothing} # constprop'ed source
-    # display(@ccall jl_uncompress_ir(target_ci.def.def::Any, C_NULL::Ptr{Cvoid}, target_ci.inferred::Any)::Any)
+    # display(Core.Compiler._uncompressed_ir(target_ci.def, target_ci.inferred::String))
 
     raw = false
     lookup = @cfunction(custom_lookup, Any, (Any,Csize_t,Csize_t))
@@ -486,31 +486,39 @@ end
 @newinterp CustomDataInterp
 struct CustomDataInterpToken end
 CC.cache_owner(::CustomDataInterp) = CustomDataInterpToken()
+global custom_data_interp_transformed_sin::Bool = global custom_data_interp_transformed_cos::Bool = false
 struct CustomData
     inferred
     CustomData(@nospecialize inferred) = new(inferred)
 end
-function CC.transform_result_for_cache(interp::CustomDataInterp,
-    mi::Core.MethodInstance, valid_worlds::CC.WorldRange, result::CC.InferenceResult)
-    inferred_result = @invoke CC.transform_result_for_cache(interp::CC.AbstractInterpreter,
-        mi::Core.MethodInstance, valid_worlds::CC.WorldRange, result::CC.InferenceResult)
+function CC.transform_result_for_cache(interp::CustomDataInterp, result::CC.InferenceResult)
+    inferred_result = @invoke CC.transform_result_for_cache(
+        interp::CC.AbstractInterpreter, result::CC.InferenceResult)
+    def = result.linfo.def
+    if def isa Method
+        meth_name = def.name
+        if meth_name === :sin
+            global custom_data_interp_transformed_sin = true
+        elseif meth_name === :cos
+            global custom_data_interp_transformed_cos = true
+        end
+    end
     return CustomData(inferred_result)
 end
 function CC.src_inlining_policy(interp::CustomDataInterp, @nospecialize(src),
-                            @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
+                                @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
     if src isa CustomData
         src = src.inferred
     end
     return @invoke CC.src_inlining_policy(interp::CC.AbstractInterpreter, src::Any,
                                           info::CC.CallInfo, stmt_flag::UInt32)
 end
-CC.retrieve_ir_for_inlining(cached_result::CodeInstance, src::CustomData) =
-    CC.retrieve_ir_for_inlining(cached_result, src.inferred)
 CC.retrieve_ir_for_inlining(mi::MethodInstance, src::CustomData, preserve_local_sources::Bool) =
     CC.retrieve_ir_for_inlining(mi, src.inferred, preserve_local_sources)
 let src = code_typed((Int,); interp=CustomDataInterp()) do x
         return sin(x) + cos(x)
     end |> only |> first
+    @test custom_data_interp_transformed_sin && custom_data_interp_transformed_cos
     @test count(isinvoke(:sin), src.code) == 1
     @test count(isinvoke(:cos), src.code) == 1
     @test count(isinvoke(:+), src.code) == 0
