@@ -1329,16 +1329,16 @@ end
 function handle_any_const_result!(cases::Vector{InliningCase},
     @nospecialize(result), match::MethodMatch, argtypes::Vector{Any},
     @nospecialize(info::CallInfo), flag::UInt32, state::InliningState;
-    allow_abstract::Bool, allow_typevars::Bool)
+    allow_typevars::Bool)
     if isa(result, ConcreteResult)
         return handle_concrete_result!(cases, result, match, info, state)
     elseif isa(result, SemiConcreteResult)
-        return handle_semi_concrete_result!(cases, result, match, info, flag, state; allow_abstract)
+        return handle_semi_concrete_result!(cases, result, match, info, flag, state)
     elseif isa(result, ConstPropResult)
-        return handle_const_prop_result!(cases, result, match, info, flag, state; allow_abstract, allow_typevars)
+        return handle_const_prop_result!(cases, result, match, info, flag, state; allow_typevars)
     else
         @assert result === nothing || result isa VolatileInferenceResult
-        return handle_match!(cases, match, argtypes, info, flag, state; allow_abstract, allow_typevars, volatile_inf_result = result)
+        return handle_match!(cases, match, argtypes, info, flag, state; allow_typevars, volatile_inf_result = result)
     end
 end
 
@@ -1413,7 +1413,7 @@ function compute_inlining_cases(@nospecialize(info::CallInfo), flag::UInt32, sig
                 end
             else
                 handled_all_cases &= handle_any_const_result!(cases,
-                    result, match, argtypes, info, flag, state; allow_abstract=true, allow_typevars=false)
+                    result, match, argtypes, info, flag, state; allow_typevars=false)
             end
         end
         fully_covered &= split_fully_covered
@@ -1428,7 +1428,7 @@ function compute_inlining_cases(@nospecialize(info::CallInfo), flag::UInt32, sig
         match = getsplit(info, i)[j]
         result = getresult(info, k)
         handled_all_cases &= handle_any_const_result!(cases,
-            result, match, argtypes, info, flag, state; allow_abstract=true, allow_typevars=true)
+            result, match, argtypes, info, flag, state; allow_typevars=true)
     elseif length(cases) == 0 && only_method isa Method
         # if the signature is fully covered and there is only one applicable method,
         # we can try to inline it even in the presence of unmatched sparams
@@ -1445,7 +1445,7 @@ function compute_inlining_cases(@nospecialize(info::CallInfo), flag::UInt32, sig
             result = getresult(info, 1)
         end
         handle_any_const_result!(cases,
-            result, match, argtypes, info, flag, state; allow_abstract=true, allow_typevars=true)
+            result, match, argtypes, info, flag, state; allow_typevars=true)
         fully_covered = handled_all_cases = match.fully_covers
     elseif !handled_all_cases
         # if we've not seen all candidates, union split is valid only for dispatch tuples
@@ -1468,9 +1468,8 @@ end
 function handle_match!(cases::Vector{InliningCase},
     match::MethodMatch, argtypes::Vector{Any}, @nospecialize(info::CallInfo), flag::UInt32,
     state::InliningState;
-    allow_abstract::Bool, allow_typevars::Bool, volatile_inf_result::Union{Nothing,VolatileInferenceResult})
+    allow_typevars::Bool, volatile_inf_result::Union{Nothing,VolatileInferenceResult})
     spec_types = match.spec_types
-    allow_abstract || isdispatchtuple(spec_types) || return false
     # We may see duplicated dispatch signatures here when a signature gets widened
     # during abstract interpretation: for the purpose of inlining, we can just skip
     # processing this dispatch candidate (unless unmatched type parameters are present)
@@ -1483,10 +1482,9 @@ end
 
 function handle_const_prop_result!(cases::Vector{InliningCase}, result::ConstPropResult,
     match::MethodMatch, @nospecialize(info::CallInfo), flag::UInt32, state::InliningState;
-    allow_abstract::Bool, allow_typevars::Bool)
+    allow_typevars::Bool)
     mi = result.result.linfo
     spec_types = match.spec_types
-    allow_abstract || isdispatchtuple(spec_types) || return false
     if !validate_sparams(mi.sparam_vals)
         (allow_typevars && !may_have_fcalls(mi.def::Method)) || return false
     end
@@ -1520,11 +1518,9 @@ function semiconcrete_result_item(result::SemiConcreteResult,
 end
 
 function handle_semi_concrete_result!(cases::Vector{InliningCase}, result::SemiConcreteResult,
-    match::MethodMatch, @nospecialize(info::CallInfo), flag::UInt32, state::InliningState;
-    allow_abstract::Bool)
+    match::MethodMatch, @nospecialize(info::CallInfo), flag::UInt32, state::InliningState)
     mi = result.mi
     spec_types = match.spec_types
-    allow_abstract || isdispatchtuple(spec_types) || return false
     validate_sparams(mi.sparam_vals) || return false
     item = semiconcrete_result_item(result, info, flag, state)
     item === nothing && return false
